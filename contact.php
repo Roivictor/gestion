@@ -113,11 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="row">
                                 <div class="col-md-6">
                                     <h5><i class="bi bi-geo-alt"></i> Adresse</h5>
-                                    <p>123 Rue de l'Exemple<br>75000 Paris, France</p>
+                                    <p>123 Avenue syl olympio<br>Agoé,LOME</p>
                                 </div>
                                 <div class="col-md-6">
                                     <h5><i class="bi bi-telephone"></i> Téléphone</h5>
-                                    <p>+33 1 23 45 67 89</p>
+                                    <p>0022870512027</p>
                                     
                                     <h5><i class="bi bi-envelope"></i> Email</h5>
                                     <p>contact@<?= strtolower(SITE_NAME) ?>.com</p>
@@ -125,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             
                             <div class="mt-4">
-                                <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2624.99144060821!2d2.292292615509614!3d48.85837360866186!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47e66e2964e34e2d%3A0x8ddca9ee380ef7e0!2sTour%20Eiffel!5e0!3m2!1sfr!2sfr!4v1623251234567!5m2!1sfr!2sfr" 
+                                <iframe src="https://www.google.com/maps/place/Le+PATIO/@6.1799399,1.2162319,17z/data=!3m1!4b1!4m9!3m8!1s0x1023e24010000001:0xe1b0172d89893dd6!5m2!4m1!1i2!8m2!3d6.1799399!4d1.2162319!16s%2Fg%2F11cjr5tpwr?entry=ttu&g_ep=EgoyMDI1MDYxNy4wIKXMDSoASAFQAw%3D%3D" 
                                         width="100%" height="300" style="border:0;" allowfullscreen="" loading="lazy"></iframe>
                             </div>
                         </div>

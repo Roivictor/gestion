@@ -35,7 +35,7 @@ $page_title = "À propos - " . SITE_NAME;
                         <p>Au fil des années, nous avons élargi notre gamme de produits tout en maintenant notre engagement envers la qualité et le service client exceptionnel.</p>
                     </div>
                     <div class="col-lg-6">
-                        <img src="images/about-history.jpg" alt="Notre histoire" class="img-fluid rounded shadow">
+                        <img src="images/histoire.jpg" alt="Notre histoire" class="img-fluid rounded shadow">
                     </div>
                 </div>
             </section>
@@ -82,7 +82,7 @@ $page_title = "À propos - " . SITE_NAME;
                 <div class="row">
                     <div class="col-md-4 mb-4">
                         <div class="card h-100 text-center">
-                            <img src="images/team1.jpg" class="card-img-top" alt="Directeur">
+                            <img src="images/direc.jpg" class="card-img-top" alt="Directeur">
                             <div class="card-body">
                                 <h4 class="card-title">Jean Dupont</h4>
                                 <p class="text-muted">Fondateur & Directeur</p>
@@ -96,7 +96,7 @@ $page_title = "À propos - " . SITE_NAME;
                     </div>
                     <div class="col-md-4 mb-4">
                         <div class="card h-100 text-center">
-                            <img src="images/team2.jpg" class="card-img-top" alt="Responsable commercial">
+                            <img src="images/bj.jpg" class="card-img-top" alt="Responsable commercial">
                             <div class="card-body">
                                 <h4 class="card-title">Marie Martin</h4>
                                 <p class="text-muted">Responsable Commercial</p>
