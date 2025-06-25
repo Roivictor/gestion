@@ -1,6 +1,10 @@
 <?php
 require_once '../config.php';
-checkRole(['admin']);
+// Pas besoin d'appeler ici, car dashboard.php a déjà appelé checkAdminRole()
+// et cette page est incluse APRES cette vérification.
+// Si vous insistez pour avoir une vérification spécifique ici pour une raison particulière,
+// vous pourriez faire ceci, mais c'est redondant avec dashboard.php:
+// checkAdminRole();
 
 // Gestion des actions
 if (isset($_GET['action'])) {
@@ -70,7 +74,7 @@ $categories = $pdo->query("SELECT id, name FROM categories ORDER BY name")->fetc
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                     <h1 class="h2">Gestion des produits</h1>
                     <div class="btn-toolbar mb-2 mb-md-0">
-                        <a href="add_product.php" class="btn btn-success">
+                        <a href="dashboard.php?page=add_product" ...>
                             <i class="bi bi-plus-circle"></i> Ajouter un produit
                         </a>
                     </div>

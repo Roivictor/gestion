@@ -16,7 +16,7 @@
  */
 
 // 1. Définition du mot de passe en clair pour la démonstration
-$motDePasseClair = "admin123"; // Ce mot de passe est en clair uniquement à des fins de test ici.
+$motDePasseClair = "1234"; // Ce mot de passe est en clair uniquement à des fins de test ici.
 
 // 2. Hachage du mot de passe clair
 // PASSWORD_DEFAULT utilise l'algorithme de hachage le plus fort et le plus récent disponible (actuellement bcrypt).

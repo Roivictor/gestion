@@ -1,5 +1,9 @@
 <?php
-session_start(); // 1. Démarrage de la session (si non déjà fait par config.php, mais bonne pratique de l'avoir ici aussi pour s'assurer)
+// products.php - Version Finale et optimisée
+
+// RETIREZ OU METTEZ EN COMMENTAIRE CETTE LIGNE : session_start();
+// session_start(); // <= Cette ligne est redondante car config.php la gère.
+
 require_once 'config.php'; // 2. Inclut le fichier de configuration (connexion DB, fonctions utilitaires, PHPMailer)
 
 // 3. Récupération et nettoyage des paramètres de filtrage (GET)
@@ -29,6 +33,9 @@ if (!empty($search)) {
 
 if ($category_id > 0) {
     // Filtrer par catégorie, incluant les produits de sous-catégories (si c.parent_id est la catégorie actuelle)
+    // NOTE: Si vos catégories n'ont pas de parent_id ou si la logique de sous-catégories est différente,
+    // ajustez cette partie. Pour l'instant, cela suppose que les produits sont directement liés
+    // à une catégorie ou à sa catégorie parente via c.parent_id.
     $query .= " AND (p.category_id = ? OR c.parent_id = ?)";
     $params[] = $category_id;
     $params[] = $category_id;
@@ -56,11 +63,12 @@ switch ($sort) {
         break;
     case 'rating':
         // Tri par meilleure note (avg_rating est calculé par une sous-requête)
-        $query .= " ORDER BY avg_rating DESC";
+        // Les produits sans avis seront traités différemment. Vous pouvez ajouter IS NOT NULL pour les exclure.
+        $query .= " ORDER BY avg_rating DESC, p.created_at DESC"; // Ajout de created_at pour départager
         break;
     case 'popular':
         // Tri par popularité (basé sur le nombre de fois qu'un produit a été commandé)
-        $query .= " ORDER BY (SELECT COUNT(*) FROM order_details WHERE product_id = p.id) DESC";
+        $query .= " ORDER BY (SELECT COUNT(*) FROM order_details WHERE product_id = p.id) DESC, p.created_at DESC";
         break;
     default:
         // Tri par défaut : les plus récents
@@ -73,6 +81,7 @@ $stmt->execute($params); // Exécute la requête en liant les paramètres
 $products = $stmt->fetchAll(); // Récupère tous les résultats
 
 // 8. Récupération des catégories pour le filtre (menu déroulant)
+// Affiche seulement les catégories de premier niveau. Si vous voulez toutes les catégories, ajustez la requête.
 $categories = $pdo->query("SELECT id, name FROM categories WHERE parent_id IS NULL ORDER BY name")->fetchAll();
 
 // 9. Récupération du prix max pour le slider de filtre de prix
@@ -87,23 +96,24 @@ $price_range = $pdo->query("SELECT MIN(price) AS min_price, MAX(price) AS max_pr
     <title>Produits - <?= SITE_NAME ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="js/css/style.css" rel="stylesheet"> <!-- Chemin vers votre CSS personnalisé -->
-</head>
+    <link href="js/css/style.css" rel="stylesheet">
+
+    <?php include 'includes/header.php'; // Inclut la balise meta CSRF si elle est dans header.php ?>
+    </head>
 <body>
-    <?php include 'includes/header.php'; ?> <!-- Inclusion de l'en-tête -->
+    <?php // Si header.php ne contient que la balise meta CSRF, déplacez l'inclusion du reste de l'en-tête ici si nécessaire.
+          // Si header.php contient déjà le <body> d'ouverture et le nav, déplacez cette ligne au-dessus de <body>. ?>
 
     <main class="py-5">
         <div class="container">
             <div class="row">
-                <!-- Bloc de Filtres (colonne de gauche) -->
                 <div class="col-lg-3 mb-4">
                     <div class="card">
                         <div class="card-header bg-primary text-white">
                             <h5 class="mb-0">Filtrer les produits</h5>
                         </div>
                         <div class="card-body">
-                            <form method="GET" id="filter-form"> <!-- Formulaire de filtrage -->
-                                <div class="mb-3">
+                            <form method="GET" id="filter-form"> <div class="mb-3">
                                     <label for="search" class="form-label">Recherche</label>
                                     <input type="text" class="form-control" id="search" name="search" value="<?= htmlspecialchars($search) ?>">
                                 </div>
@@ -131,7 +141,6 @@ $price_range = $pdo->query("SELECT MIN(price) AS min_price, MAX(price) AS max_pr
                                         </div>
                                     </div>
                                     <div class="mt-2">
-                                        <!-- Slider de prix : met à jour l'input 'max_price' -->
                                         <input type="range" class="form-range" id="price-range" min="0" max="<?= ceil($price_range['max_price']) ?>" step="1"
                                                value="<?= $max_price ? $max_price : ceil($price_range['max_price']) ?>">
                                     </div>
@@ -155,13 +164,11 @@ $price_range = $pdo->query("SELECT MIN(price) AS min_price, MAX(price) AS max_pr
                     </div>
                 </div>
 
-                <!-- Liste des produits (colonne de droite) -->
                 <div class="col-lg-9">
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h2>Nos produits</h2>
                         <div class="d-flex">
                             <div class="btn-group" role="group">
-                                <!-- Boutons pour changer la vue (grille/liste) -->
                                 <button type="button" class="btn btn-outline-secondary active" id="grid-view">
                                     <i class="bi bi-grid"></i>
                                 </button>
@@ -177,7 +184,6 @@ $price_range = $pdo->query("SELECT MIN(price) AS min_price, MAX(price) AS max_pr
                             Aucun produit trouvé avec ces critères de recherche.
                         </div>
                     <?php else: ?>
-                        <!-- Conteneur des produits, avec une classe pour la gestion des vues JS -->
                         <div class="row" id="products-container">
                             <?php foreach ($products as $product): ?>
                             <div class="col-md-6 col-xl-4 mb-4 product-item">
@@ -205,8 +211,7 @@ $price_range = $pdo->query("SELECT MIN(price) AS min_price, MAX(price) AS max_pr
                                             </div>
                                         <?php endif; ?>
 
-                                        <p class="card-text"><?= htmlspecialchars($product['description']) ?></p>
-                                    </div>
+                                        <p class="card-text"><?= htmlspecialchars($product['description'] ?? '') ?></p> </div>
 
                                     <div class="card-footer bg-white border-0">
                                         <div class="d-flex justify-content-between align-items-center">
@@ -231,10 +236,9 @@ $price_range = $pdo->query("SELECT MIN(price) AS min_price, MAX(price) AS max_pr
         </div>
     </main>
 
-    <?php include 'includes/footer.php'; ?> <!-- Inclusion du pied de page -->
-
+    <?php include 'includes/footer.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="js/script.js"></script> <!-- Votre script JS personnalisé -->
+    <script src="js/script.js"></script>
     <script>
         // 11. Gestion des vues (grille/liste) avec JavaScript
         document.getElementById('grid-view').addEventListener('click', function() {

@@ -33,6 +33,7 @@ $main_categories = $pdo->query("
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="csrf-token" content="<?= htmlspecialchars(generateCsrfToken()) ?>">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accueil - <?= SITE_NAME ?></title> <!-- 4. Titre dynamique de la page -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/> <!-- 5. Liens CSS externes -->

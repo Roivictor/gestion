@@ -1,7 +1,7 @@
 <?php
 // C'est le mot de passe CLAIR que vous voulez pour votre admin.
 // REMPLACEZ 'SuperAdminPass123' par le vrai mot de passe que vous avez choisi.
-$mot_de_passe_clair_admin = '123'; 
+$mot_de_passe_clair_admin = '1234'; 
 
 // Cette fonction PHP va hacher le mot de passe.
 $mot_de_passe_hache_pour_bd = password_hash($mot_de_passe_clair_admin, PASSWORD_DEFAULT);

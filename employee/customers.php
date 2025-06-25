@@ -1,210 +1,63 @@
 <?php
-// Désactiver l'affichage des erreurs en production
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(E_ALL);
+// employee/customers.php
+// Ce fichier est inclus par employee/dashboard.php.
+// $pdo et les fonctions sont disponibles.
 
-require_once '../config.php'; // Assurez-vous que config.php gère session_start() et la connexion PDO
-
-// Vérification de session
-if (!isset($_SESSION['user']['id']) || !in_array(strtolower($_SESSION['user']['role']), ['employee'])) {
-    $_SESSION['error_message'] = "Accès non autorisé.";
-    header('Location: ../login.php');
-    exit();
-}
-
-// Récupérer l'ID de l'employé depuis la session pour l'affichage de la sidebar
-$employee_user_id = $_SESSION['user']['id'];
-
-// Récupérer les informations de base de l'employé pour la sidebar
-try {
-    $stmt_sidebar = $pdo->prepare("
-        SELECT u.first_name, u.last_name, e.position
-        FROM users u
-        JOIN employees e ON u.id = e.user_id
-        WHERE u.id = ?
-    ");
-    $stmt_sidebar->execute([$employee_user_id]);
-    $employee_sidebar = $stmt_sidebar->fetch(PDO::FETCH_ASSOC);
-
-    if (!$employee_sidebar) {
-        $_SESSION['error_message'] = "Erreur de profil pour la sidebar. Veuillez contacter l'administrateur.";
-        header('Location: ../login.php');
-        exit();
-    }
-} catch (PDOException $e) {
-    error_log("Erreur PDO lors de la récupération des infos sidebar employé: " . $e->getMessage());
-    $_SESSION['error_message'] = "Erreur système. Veuillez réessayer plus tard.";
-    header('Location: ../login.php');
-    exit();
-}
-
-
-// Récupérer la liste des clients
 $customers = [];
 try {
-    $stmt_customers = $pdo->query("
-        SELECT c.id, u.first_name, u.last_name, u.email, u.phone_number, u.address, c.registration_date
-        FROM customers c
-        JOIN users u ON c.user_id = u.id
-        ORDER BY c.registration_date DESC
-    ");
-    $customers = $stmt_customers->fetchAll(PDO::FETCH_ASSOC);
+    $stmt = $pdo->query("SELECT id, first_name, last_name, username, email, created_at FROM users WHERE role = 'customer' ORDER BY created_at DESC");
+    $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    error_log("Erreur PDO lors de la récupération des clients: " . $e->getMessage());
-    $error_message = "Erreur lors du chargement des clients. Veuillez réessayer plus tard.";
+    error_log("Erreur de récupération des clients (employee/customers.php): " . $e->getMessage());
+    $_SESSION['error_message'] = __('error_loading_customers');
 }
-
-// Pour le message de succès/erreur
-$success_message = $_SESSION['success_message'] ?? '';
-$error_message = $error_message ?? ($_SESSION['error_message'] ?? ''); // Priorité à l'erreur de PDO si elle existe
-unset($_SESSION['success_message']);
-unset($_SESSION['error_message']);
-
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clients - Employé - <?= SITE_NAME ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="../css/employee.css" rel="stylesheet">
-</head>
-<body>
-    <div class="container-fluid">
-        <div class="row">
-            <nav id="sidebar" class="col-md-3 col-lg-2 d-md-block bg-dark sidebar collapse">
-                <div class="position-sticky pt-3">
-                    <div class="text-center mb-4">
-                        <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center" style="width: 80px; height: 80px;">
-                            <i class="bi bi-person fs-3 text-dark"></i>
-                        </div>
-                        <h6 class="mt-2 text-white"><?= htmlspecialchars($employee_sidebar['first_name'] . ' ' . $employee_sidebar['last_name']) ?></h6>
-                        <p class="text-muted small"><?= htmlspecialchars($employee_sidebar['position'] ?? 'N/A') ?></p>
-                    </div>
-                    
-                    <ul class="nav flex-column">
-                        <li class="nav-item">
-                            <a class="nav-link" href="dashboard.php">
-                                <i class="bi bi-speedometer2 me-2"></i>
-                                Tableau de bord
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="products.php">
-                                <i class="bi bi-box-seam me-2"></i>
-                                Produits
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="orders.php">
-                                <i class="bi bi-cart me-2"></i>
-                                Commandes
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link active" href="customers.php">
-                                <i class="bi bi-people me-2"></i>
-                                Clients
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="profile.php">
-                                <i class="bi bi-person me-2"></i>
-                                Profil
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="change_password.php">
-                                <i class="bi bi-lock me-2"></i>
-                                Changer mot de passe
-                            </a>
-                        </li>
-                    </ul>
-                    
-                    <hr class="text-light">
-                    
-                    <ul class="nav flex-column">
-                        <li class="nav-item">
-                            <a class="nav-link" href="../logout.php">
-                                <i class="bi bi-box-arrow-right me-2"></i>
-                                Déconnexion
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-            </nav>
-            
-            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
-                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                    <h1 class="h2">Gestion des Clients</h1>
-                </div>
 
-                <?php if ($success_message): ?>
-                    <div class="alert alert-success alert-dismissible fade show" role="alert">
-                        <?= htmlspecialchars($success_message) ?>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                <?php endif; ?>
-                <?php if ($error_message): ?>
-                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        <?= htmlspecialchars($error_message) ?>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                <?php endif; ?>
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><?= __('customer_list_title') ?></h1>
+</div>
 
-                <div class="card">
-                    <div class="card-header">
-                        <h5>Liste des clients</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Nom Complet</th>
-                                        <th>Email</th>
-                                        <th>Téléphone</th>
-                                        <th>Adresse</th>
-                                        <th>Date d'inscription</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (!empty($customers)): ?>
-                                        <?php foreach ($customers as $customer): ?>
-                                            <tr>
-                                                <td><?= htmlspecialchars($customer['id']) ?></td>
-                                                <td><?= htmlspecialchars($customer['first_name'] . ' ' . $customer['last_name']) ?></td>
-                                                <td><?= htmlspecialchars($customer['email']) ?></td>
-                                                <td><?= htmlspecialchars($customer['phone_number'] ?? 'N/A') ?></td>
-                                                <td><?= htmlspecialchars($customer['address'] ?? 'N/A') ?></td>
-                                                <td><?= htmlspecialchars(date('d/m/Y', strtotime($customer['registration_date']))) ?></td>
-                                                <td>
-                                                    <a href="customer_details.php?id=<?= htmlspecialchars($customer['id']) ?>" class="btn btn-sm btn-outline-info" title="Voir les détails">
-                                                        <i class="bi bi-eye"></i>
-                                                    </a>
-                                                    </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr>
-                                            <td colspan="7" class="text-center">Aucun client trouvé.</td>
-                                        </tr>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </main>
-        </div>
+<?php if (isset($_SESSION['error_message'])): ?>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <?= $_SESSION['error_message'] ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
-    
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../js/employee.js"></script>
-</body>
-</html>
+    <?php unset($_SESSION['error_message']); ?>
+<?php endif; ?>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th><?= __('customer_id') ?></th>
+                <th><?= __('name') ?></th>
+                <th><?= __('username') ?></th>
+                <th><?= __('email_address') ?></th>
+                <th><?= __('registration_date') ?></th>
+                <th><?= __('actions') ?></th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if (empty($customers)): ?>
+                <tr>
+                    <td colspan="6" class="text-center"><?= __('no_customers_found') ?></td>
+                </tr>
+            <?php else: ?>
+                <?php foreach ($customers as $customer): ?>
+                <tr>
+                    <td><?= htmlspecialchars($customer['id']) ?></td>
+                    <td><?= htmlspecialchars($customer['first_name'] . ' ' . $customer['last_name']) ?></td>
+                    <td><?= htmlspecialchars($customer['username']) ?></td>
+                    <td><?= htmlspecialchars($customer['email']) ?></td>
+                    <td><?= formatDate($customer['created_at'], 'd/m/Y H:i') ?></td>
+                    <td>
+                        <a href="<?= BASE_URL ?>employee/dashboard.php?page=customer_details&id=<?= $customer['id'] ?>" class="btn btn-sm btn-outline-info" title="<?= __('view_details') ?>">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        </td>
+                </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
+</div>

@@ -10,31 +10,31 @@ if (!defined('SITE_NAME')) {
         <div class="row">
             <div class="col-md-4 mb-4 mb-md-0">
                 <h5><?= SITE_NAME ?></h5>
-                <p class="text-muted">Votre boutique en ligne préférée pour des produits de qualité.</p>
+                <p class="text-white">Votre boutique en ligne préférée pour des produits de qualité.</p>
             </div>
             
             <div class="col-md-2 mb-4 mb-md-0">
                 <h5>Liens rapides</h5>
                 <ul class="list-unstyled">
-                    <li><a href="index.php" class="text-muted">Accueil</a></li>
-                    <li><a href="products.php" class="text-muted">Produits</a></li>
-                    <li><a href="about.php" class="text-muted">À propos</a></li>
-                    <li><a href="contact.php" class="text-muted">Contact</a></li>
+                    <li><a href="index.php" class="text-white">Accueil</a></li>
+                    <li><a href="products.php" class="text-white">Produits</a></li>
+                    <li><a href="about.php" class="text-white">À propos</a></li>
+                    <li><a href="contact.php" class="text-white">Contact</a></li>
                 </ul>
             </div>
             
             <div class="col-md-3 mb-4 mb-md-0">
                 <h5>Contact</h5>
-                <ul class="list-unstyled text-muted">
-                    <li><i class="bi bi-geo-alt"></i> 123 Rue Exemple, Ville</li>
-                    <li><i class="bi bi-telephone"></i> +123 456 789</li>
+                <ul class="list-unstyled text-white">
+                    <li><i class="bi bi-geo-alt"></i> 123 Rue Sly,Lomé</li>
+                    <li><i class="bi bi-telephone"></i> 0022870512027</li>
                     <li><i class="bi bi-envelope"></i> contact@votreboutique.com</li>
                 </ul>
             </div>
             
             <div class="col-md-3">
                 <h5>Newsletter</h5>
-                <p class="text-muted">Abonnez-vous pour recevoir nos offres spéciales.</p>
+                <p class="text-white">Abonnez-vous pour recevoir nos offres spéciales.</p>
                 <form class="mb-3">
                     <div class="input-group">
                         <input type="email" class="form-control" placeholder="Votre email">
@@ -50,7 +50,6 @@ if (!defined('SITE_NAME')) {
             </div>
         </div>
 
-        <!-- Section Avis Clients (visible uniquement par l'admin) -->
         <?php if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin'): ?>
         <div class="row mt-5">
             <div class="col-12">
@@ -75,7 +74,7 @@ if (!defined('SITE_NAME')) {
                                 <tbody>
                                     <?php
                                     // Connexion à la base de données et récupération des avis
-                                    require_once '../config.php';
+                                    require_once '../config.php'; // Assurez-vous que le chemin est correct depuis l'emplacement du footer.php
                                     $stmt = $pdo->query("
                                         SELECT r.id, p.name AS product_name, 
                                                CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
@@ -124,8 +123,7 @@ if (!defined('SITE_NAME')) {
         
         <hr class="my-4 bg-secondary">
         
-        <div class="text-center text-muted">
-            <p class="mb-0">&copy; <?= date('Y') ?> <?= SITE_NAME ?>. Tous droits réservés.</p>
+        <div class="text-center text-white"> <p class="mb-0">&copy; <?= date('Y') ?> <?= SITE_NAME ?>. Tous droits réservés.</p>
         </div>
     </div>
 </footer>

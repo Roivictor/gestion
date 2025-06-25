@@ -1,16 +1,39 @@
 <?php
-// login.php - Version Finale et Sécurisée
+// login.php - Version Finale et Sécurisée (Corrigée)
 
 // Inclut le fichier de configuration qui contient la connexion DB, les fonctions utilitaires (sanitize, redirect),
 // la gestion des sessions (session_start est au début de config.php), et les fonctions CSRF.
-require_once 'config.php';
+require_once 'config.php'; // Assurez-vous que ce chemin est correct selon votre arborescence
 
 // Debug: Afficher les erreurs (IMPORTANT : à retirer en production en mettant display_errors à 0 !)
-ini_set('display_errors', 1);       // 1 pour afficher les erreurs, 0 pour les cacher
-ini_set('display_startup_errors', 1); // Affiche les erreurs de démarrage
-error_reporting(E_ALL);             // Rapporte tous les types d'erreurs
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
 $error = ''; // Variable pour stocker et afficher les messages d'erreur de connexion
+
+// Redirection si déjà connecté
+if (isset($_SESSION['user_id'])) {
+    if (isset($_SESSION['user']['role'])) { // S'assurer que le rôle est défini
+        if ($_SESSION['user']['role'] === 'admin') {
+            redirect(BASE_URL . 'admin/dashboard.php');
+        } elseif ($_SESSION['user']['role'] === 'employee') {
+            // Check for first login *before* redirecting to general dashboard
+            if (isset($_SESSION['user']['is_first_login']) && $_SESSION['user']['is_first_login']) {
+                redirect(BASE_URL . 'employee/dashboard.php?page=change_password_first_login');
+            } else {
+                redirect(BASE_URL . 'employee/dashboard.php');
+            }
+        } else {
+            redirect(BASE_URL . 'index.php'); // Rôle client ou non géré
+        }
+    } else {
+        // Rôle non défini en session mais user_id l'est, déconnexion pour sécurité
+        redirect(BASE_URL . 'logout.php');
+    }
+    exit();
+}
+
 
 // Traitement du formulaire de connexion si la requête est de type POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -18,7 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
         $error = "Erreur de sécurité : Tentative de connexion non autorisée. Veuillez réessayer.";
         error_log("CSRF token mismatch or missing on login attempt.");
-        // Pour des raisons de sécurité, on peut aussi exit() ici, mais afficher une erreur est plus user-friendly
     } else {
         // Nettoyage des entrées utilisateur
         $username = sanitize($_POST['username']);
@@ -26,55 +48,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             // Prépare et exécute la requête SQL pour récupérer l'utilisateur par son nom d'utilisateur.
-            // Requête préparée pour prévenir les injections SQL.
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+            $stmt = $pdo->prepare("SELECT id, username, first_name, last_name, role, email, password, is_first_login FROM users WHERE username = ?");
             $stmt->execute([$username]);
-            $user = $stmt->fetch(); // Récupère la ligne utilisateur
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if ($user) { // Si un utilisateur est trouvé avec ce nom d'utilisateur
-                // Vérification du mot de passe haché.
-                // 'password_verify()' compare le mot de passe en texte clair avec le hachage stocké.
+            if ($user) {
                 if (password_verify($password, $user['password'])) {
-                    // Stockage des données utilisateur dans la session après authentification réussie.
-                    // Le rôle est stocké en minuscules pour une comparaison uniforme.
+                    // Authentification réussie. Stockage des données utilisateur dans la session.
+                    $_SESSION['user_id'] = $user['id'];
                     $_SESSION['user'] = [
                         'id' => $user['id'],
                         'username' => $user['username'],
                         'first_name' => $user['first_name'],
                         'last_name' => $user['last_name'],
                         'role' => strtolower($user['role']), // Normalise le rôle en minuscules (ex: 'Admin' devient 'admin')
-                        'email' => $user['email']
+                        'email' => $user['email'],
+                        'is_first_login' => (bool)($user['is_first_login'] ?? false)
                     ];
 
-                    // Log pour débogage (peut être retiré ou adapté en production)
-                    error_log("User logged in: " . $_SESSION['user']['username'] . " with role: " . $_SESSION['user']['role']);
+                    error_log("User logged in: " . $_SESSION['user']['username'] . " with role: " . $_SESSION['user']['role'] . " and is_first_login: " . ($_SESSION['user']['is_first_login'] ? 'true' : 'false'));
 
-                    // Redirection basée sur le rôle de l'utilisateur ou le besoin de changer le mot de passe.
-                    if (isset($user['must_change_password']) && $user['must_change_password']) { // Vérifier si la colonne existe
-                        redirect(BASE_URL . 'change_password.php'); // Redirige vers la page de changement de mot de passe
-                    } else {
-                        switch ($_SESSION['user']['role']) { // Utilise le rôle normalisé de la session
-                            case 'admin':
-                                // Redirige les administrateurs vers le tableau de bord admin.
-                                redirect(BASE_URL . 'admin/dashboard.php');
-                                break;
-                            case 'employee':
-                                // Redirige les employés vers leur tableau de bord.
+                    // --- CORRECTION APPORTÉE ICI ---
+                    // Redirection basée sur le rôle de l'utilisateur, et ensuite la logique is_first_login
+                    switch ($_SESSION['user']['role']) {
+                        case 'admin':
+                            // Si les admins doivent aussi changer leur mot de passe au premier login,
+                            // ajoutez une logique similaire ici, redirigeant vers une page admin-spécifique.
+                            // Exemple:
+                            // if ($_SESSION['user']['is_first_login']) {
+                            //     redirect(BASE_URL . 'admin/dashboard.php?page=change_password_first_login');
+                            // } else {
+                            //     redirect(BASE_URL . 'admin/dashboard.php');
+                            // }
+                            redirect(BASE_URL . 'admin/dashboard.php'); // Redirection par défaut pour l'admin
+                            break;
+                        case 'employee':
+                            // SEULS les employés sont concernés par la redirection forcée ici
+                            if ($_SESSION['user']['is_first_login']) {
+                                redirect(BASE_URL . 'employee/dashboard.php?page=change_password_first_login');
+                            } else {
                                 redirect(BASE_URL . 'employee/dashboard.php');
-                                break;
-                            default: // Pour les autres rôles (ex: 'client'), redirige vers la page d'accueil du site client.
-                                redirect(BASE_URL . 'index.php');
-                        }
+                            }
+                            break;
+                        default: // Pour les autres rôles (ex: 'client'), redirige vers la page d'accueil du site client.
+                            redirect(BASE_URL . 'index.php');
                     }
+                    exit(); // Très important d'appeler exit() après une redirection
+
                 } else {
-                    $error = "Mot de passe incorrect."; // Message d'erreur si le mot de passe ne correspond pas.
+                    $error = "Nom d'utilisateur ou mot de passe incorrect.";
                 }
             } else {
-                $error = "Nom d'utilisateur introuvable."; // Message d'erreur si l'utilisateur n'existe pas.
+                $error = "Nom d'utilisateur ou mot de passe incorrect.";
             }
         } catch (PDOException $e) {
-            $error = "Erreur de connexion à la base de données. Veuillez réessayer."; // Erreur générique DB
-            error_log("Login PDO error: " . $e->getMessage()); // Log l'erreur détaillée pour l'administrateur
+            $error = "Erreur de connexion à la base de données. Veuillez réessayer.";
+            error_log("Login PDO error: " . $e->getMessage());
         }
     }
 }
@@ -85,10 +114,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connexion - <?= SITE_NAME ?></title>
-    <!-- Liens CSS Bootstrap -->
+    <title>Connexion - <?= defined('SITE_NAME') ? SITE_NAME : 'Mon Application' ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Lien pour les icônes Bootstrap (doit être un LINK, pas un SCRIPT) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         /* Styles CSS personnalisés pour la page de connexion */
@@ -150,7 +177,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php endif; ?>
 
                         <form method="POST" action="<?= htmlspecialchars($_SERVER['PHP_SELF']) ?>">
-                            <!-- Champ caché pour le token CSRF -->
                             <input type="hidden" name="csrf_token" value="<?= generateCsrfToken() ?>">
 
                             <div class="mb-3">
@@ -176,7 +202,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Script JavaScript de Bootstrap (pour les fonctionnalités comme les alertes dismissibles) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
