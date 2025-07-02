@@ -237,7 +237,7 @@ foreach ($_SESSION['cart'] as $item) {
                                                 <td>
                                                     <div class="d-flex align-items-center">
                                                         <?php if (!empty($item['image'])): ?>
-                                                            <img src="<?= htmlspecialchars($item['image']) ?>" alt="<?= htmlspecialchars($item['name']) ?>" class="img-thumbnail me-3" style="width: 80px; height: 80px; object-fit: cover;">
+                                                            <img src="<?= htmlspecialchars(BASE_URL . UPLOAD_URL_RELATIVE . $item['image']) ?>" alt="<?= htmlspecialchars($item['name']) ?>" class="img-thumbnail me-3" style="width: 80px; height: 80px; object-fit: cover;">
                                                         <?php endif; ?>
                                                         <span><?= htmlspecialchars($item['name']) ?></span>
                                                     </div>
@@ -260,13 +260,14 @@ foreach ($_SESSION['cart'] as $item) {
                                                                min="1" 
                                                                class="form-control form-control-sm text-center mx-1" 
                                                                style="width: 70px;" 
-                                                               readonly> <form method="POST" class="d-inline-flex ms-1">
+                                                               readonly> 
+                                                        <form method="POST" class="d-inline-flex ms-1">
                                                             <input type="hidden" name="action" value="increment_quantity">
                                                             <input type="hidden" name="product_id" value="<?= (int)$product_id ?>">
                                                             <button type="submit" class="btn btn-sm btn-outline-secondary" title="Augmenter la quantité">+</button>
                                                         </form>
                                                     </div>
-                                                    </td>
+                                                </td>
                                                 <td><?= number_format($item['price'] * $item['quantity'], 2, ',', ' ') ?> €</td>
                                                 <td>
                                                     <form method="POST">
@@ -315,7 +316,7 @@ foreach ($_SESSION['cart'] as $item) {
                                     <span><?= number_format($total, 2, ',', ' ') ?> €</span>
                                 </div>
 
-                                <?php if (isLoggedIn()): ?>
+                                <?php if (function_exists('isLoggedIn') && isLoggedIn()): // Vérifie si la fonction existe avant de l'appeler ?>
                                     <a href="checkout.php" class="btn btn-primary w-100 mt-3">
                                         <i class="bi bi-credit-card"></i> Passer la commande
                                     </a>

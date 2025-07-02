@@ -217,7 +217,7 @@ $price_range = $pdo->query("SELECT MIN(price) AS min_price, MAX(price) AS max_pr
                                         <div class="d-flex justify-content-between align-items-center">
                                             <span class="fw-bold text-primary"><?= number_format($product['price'], 2) ?> €</span>
                                             <div>
-                                                <a href="product.php?id=<?= $product['id'] ?>" class="btn btn-sm btn-outline-primary">
+                                               <a href="<?= BASE_URL ?>product.php?id=<?= $product['id'] ?>" class="btn btn-sm btn-outline-primary">
                                                     <i class="bi bi-eye"></i>
                                                 </a>
                                                 <button class="btn btn-sm btn-primary add-to-cart" data-id="<?= $product['id'] ?>">

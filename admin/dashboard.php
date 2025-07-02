@@ -1,55 +1,18 @@
 <?php
 // TOUT LE CODE PHP QUI PEUT MODIFIER LES EN-TÊTES DOIT ÊTRE ICI, AVANT TOUT ESPACE OU HTML.
+
+// IMPORTANT : Démarrer la session au tout début.
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
 require_once '../config.php'; // Inclut le fichier de configuration (connexion DB, fonctions utilitaires)
 
-// Assurez-vous que la fonction de traduction est disponible ici si elle est définie dans config.php
-// (Comme suggéré précédemment, la fonction __() et le chargement de $lang devraient être dans config.php)
-if (!function_exists('__')) {
-    // Fallback si __() n'est pas encore défini (mais il devrait l'être via config.php)
-    function __($key) {
-        global $lang;
-        return isset($lang[$key]) ? $lang[$key] : $key;
-    }
-}
-
 // Appel de la fonction de vérification checkAdminRole()
+// Déplacé ici pour une vérification précoce de l'accès.
 checkAdminRole();
 
-// --- Logique pour gérer le changement de langue (Déplacée ici depuis settings.php) ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_settings') {
-    if (isset($_POST['language'])) {
-        $selected_language = sanitize($_POST['language']);
-        $_SESSION['user_language'] = $selected_language; // Stocke dans la session
-
-        // Optionnel: Mettre à jour la langue préférée dans la base de données pour l'utilisateur
-        if (isset($_SESSION['user']['id'])) {
-            try {
-                $stmt = $pdo->prepare("UPDATE users SET language_preference = :lang WHERE id = :user_id");
-                $stmt->execute([':lang' => $selected_language, ':user_id' => $_SESSION['user']['id']]);
-                $_SESSION['success_message'] = __('language_updated_success'); // Utilisez la traduction
-            } catch (PDOException $e) {
-                error_log("Erreur lors de la mise à jour de la langue: " . $e->getMessage());
-                $_SESSION['error_message'] = __('language_update_error'); // Utilisez la traduction
-            }
-        }
-        // Rediriger pour éviter la soumission multiple du formulaire
-        header("Location: dashboard.php?page=settings");
-        exit(); // TRÈS IMPORTANT : Terminer le script après une redirection
-    }
-}
-
-// --- Logique pour inclure le contenu de la page demandée (existante) ---
-// Par défaut, nous affichons le contenu de l'aperçu du tableau de bord
-$requestedPage = isset($_GET['page']) ? sanitize($_GET['page']) : 'dashboard_overview';
-$contentFilePath = __DIR__ . '/' . $requestedPage . '.php'; // Le chemin vers le fichier de contenu
-
-// Vérifier si le fichier de contenu existe. Si non, revenir à l'aperçu par défaut.
-if (!file_exists($contentFilePath)) {
-    $contentFilePath = __DIR__ . '/dashboard_overview.php';
-    $requestedPage = 'dashboard_overview'; // Mettre à jour la page demandée au cas où elle n'existe pas
-}
-
-// Le code PHP pour les statistiques doit rester ici car il est utilisé par 'dashboard_overview.php'
+// Le code PHP pour les statistiques
 $total_orders = 0;
 $total_clients = 0;
 $total_products = 0;
@@ -72,10 +35,10 @@ try {
     $total_employees = $stmt_employees->fetchColumn();
 
     $recent_orders_stmt = $pdo->query("
-        SELECT o.id, o.date_commande, o.total_amount, o.status, u.first_name, u.last_name
+        SELECT o.id, o.order_date, o.total_amount, o.status, u.first_name, u.last_name
         FROM orders o
         JOIN users u ON o.customer_id = u.id
-        ORDER BY o.date_commande DESC
+        ORDER BY o.order_date DESC
         LIMIT 5
     ");
     $recent_orders = $recent_orders_stmt->fetchAll();
@@ -83,32 +46,87 @@ try {
     $pending_reviews_stmt = $pdo->query("SELECT COUNT(*) FROM reviews WHERE status = 'pending'");
     $pending_reviews_count = $pending_reviews_stmt->fetchColumn();
 
-    $recent_feedback_stmt = $pdo->query("SELECT COUNT(*) FROM feedback");
+    // CORRECTION APPLIQUÉE ICI : Utilisation de 'service_feedbacks' d'après la capture d'écran.
+    $recent_feedback_stmt = $pdo->query("SELECT COUNT(*) FROM service_feedbacks");
     $recent_feedback_count = $recent_feedback_stmt->fetchColumn();
 
 } catch (PDOException $e) {
-    error_log("Erreur dans dashboard.php: " . $e->getMessage());
-    // Gérer l'erreur, par exemple en affichant un message générique ou en redirigeant
+    error_log("Erreur dans dashboard.php lors du chargement des statistiques: " . $e->getMessage());
+    // Utilisation de la fonction setFlashMessage() pour afficher l'erreur à l'utilisateur
+    setFlashMessage('danger', "Une erreur est survenue lors du chargement des statistiques du tableau de bord.");
 }
 
-// Définir le titre de la page en fonction du contenu chargé
-$pageTitle = __('dashboard_title'); // Utilisez la traduction pour le titre par défaut
-switch ($requestedPage) {
-    case 'employees': $pageTitle = __('employee_management_title'); break; // Assurez-vous que ces clés existent
-    case 'add_employee': $pageTitle = __('add_employee_title'); break;
-    case 'settings': $pageTitle = __('settings_page_title'); break; // Ajoutez ceci pour la page paramètres
-    // Ajoutez d'autres cas pour les autres pages si vous voulez des titres spécifiques
-    // case 'orders': $pageTitle = __('order_management_title'); break;
-    // ...
-    default: $pageTitle = __('overview_dashboard_title'); break;
+
+// --- Logique pour inclure le contenu de la page demandée (existante) ---
+// Par défaut, nous affichons le contenu de l'aperçu du tableau de bord
+$requestedPage = isset($_GET['page']) ? sanitize($_GET['page']) : 'dashboard_overview';
+
+// Liste blanche des pages autorisées pour les admins (RÉINTRODUIT POUR SÉCURITÉ)
+$allowedAdminPages = [
+    'dashboard_overview',
+    'employees',
+    'add_employee',
+    'edit_employee', // Ajouté à la liste blanche si c'est une page éditable
+    'settings',
+    'orders',
+    'clients',
+    'products',
+    'categories',
+    'reviews',
+    'feedback',
+    'send_notification', // Ajouté à la liste blanche si cette page existe
+    'profile',           // Ajouté à la liste blanche si cette page existe
+    'change_password_admin' // Ajouté à la liste blanche si cette page existe
+];
+
+// Vérifier si la page demandée est dans la liste blanche
+if (!in_array($requestedPage, $allowedAdminPages)) {
+    $requestedPage = 'dashboard_overview'; // Revenir à l'aperçu si la page n'est pas autorisée
+    setFlashMessage('warning', "La page demandée n'existe pas ou n'est pas autorisée.");
 }
+
+$contentFilePath = __DIR__ . '/' . $requestedPage . '.php'; // Le chemin vers le fichier de contenu
+
+// Si le fichier de contenu n'existe pas (même après la vérification in_array si le fichier est manquant)
+if (!file_exists($contentFilePath)) {
+    $contentFilePath = __DIR__ . '/dashboard_overview.php'; // Repli sur l'aperçu
+    $requestedPage = 'dashboard_overview'; // Met à jour $requestedPage pour refléter le repli
+    setFlashMessage('danger', "Le fichier de contenu pour la page demandée est introuvable. Affichage de l'aperçu.");
+}
+
+
+// Définir le titre de la page en fonction du contenu chargé
+$pageTitle = 'Tableau de bord';
+switch ($requestedPage) {
+    case 'employees': $pageTitle = 'Gestion des employés'; break;
+    case 'add_employee': $pageTitle = 'Ajouter un employé'; break;
+    case 'edit_employee': $pageTitle = 'Modifier un employé'; break; // Titre ajouté
+    case 'settings': $pageTitle = 'Paramètres'; break;
+    case 'orders': $pageTitle = 'Gestion des commandes'; break;
+    case 'clients': $pageTitle = 'Gestion des clients'; break;
+    case 'products': $pageTitle = 'Gestion des produits'; break;
+    case 'categories': $pageTitle = 'Gestion des catégories'; break;
+    case 'reviews': $pageTitle = 'Gestion des avis'; break;
+    case 'feedback': $pageTitle = 'Gestion des retours'; break;
+    case 'send_notification': $pageTitle = 'Envoyer une notification'; break; // Titre ajouté
+    case 'profile': $pageTitle = 'Mon Profil Administrateur'; break; // Titre ajouté
+    case 'change_password_admin': $pageTitle = 'Changer le mot de passe'; break; // Titre ajouté
+    default: $pageTitle = 'Aperçu du Tableau de bord'; break;
+}
+
+// *** GÉNÉRATION DU TOKEN CSRF ICI, AVANT LE DÉBUT DU HTML ***
+$csrf_token = generateCsrfToken(); // Cette fonction doit être définie dans config.php
 
 ?>
 <!DOCTYPE html>
-<html lang="<?= htmlspecialchars($current_language_code ?? 'fr') ?>"> <head>
+<html lang="fr">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($pageTitle) ?> - <?= SITE_NAME ?></title>
+
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrf_token) ?>">
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../css/style.css" rel="stylesheet">
@@ -164,6 +182,7 @@ switch ($requestedPage) {
         .content {
             margin-left: 250px; /* Décale le contenu principal pour la barre latérale */
             padding: 20px;
+            flex-grow: 1; /* Permet au contenu de prendre la largeur restante */
         }
         .stat-card {
             background: linear-gradient(45deg, #0d6efd, #0b5ed7); /* Dégradé pour Commandes */
@@ -178,95 +197,109 @@ switch ($requestedPage) {
     </style>
 </head>
 <body>
+    <div id="toast-container" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100"></div>
+
     <div class="d-flex">
         <div class="sidebar d-flex flex-column">
-            <h4 class="text-white text-center mb-4"><?= __('store_crm_title') ?></h4>
+            <h4 class="text-white text-center mb-4">Store CRM</h4>
             <div class="px-3 mb-4">
-                <p class="text-white-50 mb-1"><?= __('connected_as') ?> :</p>
+                <p class="text-white-50 mb-1">Connecté en tant que :</p>
                 <p class="fw-bold text-white mb-1"><?= htmlspecialchars($_SESSION['user']['first_name'] . ' ' . $_SESSION['user']['last_name']) ?></p>
                 <span class="badge bg-primary"><?= htmlspecialchars(ucfirst($_SESSION['user']['role'])) ?></span>
-                <a href="../logout.php" class="btn btn-danger btn-sm mt-3 w-100"><?= __('logout') ?></a>
+                <a href="../logout.php" class="btn btn-danger btn-sm mt-3 w-100">Déconnexion</a>
             </div>
             <ul class="nav nav-pills flex-column mb-auto">
                 <li class="nav-item">
                     <a href="dashboard.php?page=dashboard_overview" class="nav-link <?= ($requestedPage === 'dashboard_overview' ? 'active' : '') ?>">
-                        <i class="bi bi-speedometer2"></i> <?= __('dashboard_title') ?>
+                        <i class="bi bi-speedometer2"></i> Tableau de bord
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="dashboard.php?page=orders" class="nav-link <?= ($requestedPage === 'orders' ? 'active' : '') ?>">
-                        <i class="bi bi-receipt"></i> <?= __('orders') ?>
+                        <i class="bi bi-receipt"></i> Commandes
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="dashboard.php?page=clients" class="nav-link <?= ($requestedPage === 'clients' ? 'active' : '') ?>">
-                        <i class="bi bi-people"></i> <?= __('clients') ?>
+                        <i class="bi bi-people"></i> Clients
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="dashboard.php?page=products" class="nav-link <?= ($requestedPage === 'products' ? 'active' : '') ?>">
-                        <i class="bi bi-box-seam"></i> <?= __('products') ?>
+                        <i class="bi bi-box-seam"></i> Produits
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="dashboard.php?page=categories" class="nav-link <?= ($requestedPage === 'categories' ? 'active' : '') ?>">
-                        <i class="bi bi-tags"></i> <?= __('categories') ?>
+                        <i class="bi bi-tags"></i> Catégories
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="dashboard.php?page=reviews" class="nav-link <?= ($requestedPage === 'reviews' ? 'active' : '') ?>">
-                        <i class="bi bi-star"></i> <?= __('reviews') ?>
+                        <i class="bi bi-star"></i> Avis
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="dashboard.php?page=feedback" class="nav-link <?= ($requestedPage === 'feedback' ? 'active' : '') ?>">
-                        <i class="bi bi-chat-dots"></i> <?= __('feedback_service') ?>
+                        <i class="bi bi-chat-dots"></i> Retours clients
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="dashboard.php?page=employees" class="nav-link <?= ($requestedPage === 'employees' || $requestedPage === 'add_employee' || $requestedPage === 'edit_employee' ? 'active' : '') ?>">
-                        <i class="bi bi-person-badge"></i> <?= __('employees') ?>
+                        <i class="bi bi-person-badge"></i> Employés
+                    </a>
+                </li>
+                   <li class="nav-item">
+                    <a href="dashboard.php?page=send_notification" class="nav-link <?= ($requestedPage === 'send_notification' ? 'active' : '') ?>">
+                        <i class="bi bi-send"></i> Envoyer notification
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="dashboard.php?page=settings" class="nav-link <?= ($requestedPage === 'settings' ? 'active' : '') ?>">
-                        <i class="bi bi-gear"></i> <?= __('settings') ?>
+                        <i class="bi bi-gear"></i> Paramètres
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-                        <i class="bi bi-graph-up"></i> <?= __('reports') ?>
+                        <i class="bi bi-graph-up"></i> Rapports
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-                        <i class="bi bi-calendar-check"></i> <?= __('appointments') ?>
+                        <i class="bi bi-calendar-check"></i> Rendez-vous
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-                        <i class="bi bi-bell"></i> <?= __('notifications') ?>
+                        <i class="bi bi-bell"></i> Notifications (Admin)
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-                        <i class="bi bi-info-circle"></i> <?= __('help') ?>
+                        <i class="bi bi-info-circle"></i> Aide
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-                        <i class="bi bi-archive"></i> <?= __('archives') ?>
+                        <i class="bi bi-archive"></i> Archives
                     </a>
                 </li>
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-                        <i class="bi bi-card-checklist"></i> <?= __('tasks') ?>
+                        <i class="bi bi-card-checklist"></i> Tâches
                     </a>
                 </li>
             </ul>
         </div>
 
         <div class="content flex-grow-1">
+            <?php
+            // Afficher les messages flash (success/error/warning/info) via getFlashMessage()
+            $flash_message = getFlashMessage();
+            if ($flash_message) {
+                echo '<div class="alert alert-' . htmlspecialchars($flash_message['type']) . ' alert-dismissible fade show" role="alert">' . htmlspecialchars($flash_message['message']) . '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>';
+            }
+            ?>
             <?php
             // Inclure le fichier de contenu dynamique
             include $contentFilePath;

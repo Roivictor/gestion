@@ -97,7 +97,8 @@ $sql = "
         u.last_name
     FROM reviews r
     JOIN products p ON r.product_id = p.id
-    JOIN users u ON r.customer_id = u.id
+    JOIN customers c ON r.customer_id = c.id
+    JOIN users u ON c.user_id = u.id
 ";
 
 $params = [];
@@ -175,14 +176,23 @@ $csrf_token = generateCsrfToken();
                             <tr>
                                 <td><?= htmlspecialchars($review['id']) ?></td>
                                 <td><?= htmlspecialchars($review['product_name']) ?></td>
-                                <td><?= htmlspecialchars($review['first_name'] . ' ' . $review['last_name']) ?></td>
+                                <td>
+                                    <?php
+                                    // Afficher le prénom et le nom de la table users s'ils existent, sinon "Utilisateur Inconnu"
+                                    if (!empty($review['first_name']) && !empty($review['last_name'])) {
+                                        echo htmlspecialchars($review['first_name'] . ' ' . $review['last_name']);
+                                    } else {
+                                        echo 'Utilisateur Inconnu';
+                                    }
+                                    ?>
+                                </td>
                                 <td>
                                     <?php for ($i = 0; $i < 5; $i++): ?>
                                         <i class="bi bi-star-fill <?= ($i < $review['rating'] ? 'text-warning' : 'text-muted') ?>"></i>
                                     <?php endfor; ?>
                                     (<?= htmlspecialchars($review['rating']) ?>)
                                 </td>
-                                <td><?= nl2br(htmlspecialchars(mb_strimwidth($review['comment'], 0, 100, '...'))) ?></td>
+                                <td><?= nl2br(htmlspecialchars(html_entity_decode($review['comment'], ENT_QUOTES | ENT_HTML5, 'UTF-8'))) ?></td>
                                 <td><?= formatDate($review['review_date'], 'd/m/Y H:i') ?></td>
                                 <td>
                                     <?php

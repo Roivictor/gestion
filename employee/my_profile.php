@@ -1,11 +1,10 @@
 <?php
-// employee/my_profile.php
-// Ce fichier est inclus par employee/dashboard.php
+// employee/my_profile.php - Corrigé et avec des logs de débogage supplémentaires
 
 // S'assurer que $pdo est disponible (via config.php) et que l'utilisateur est connecté.
 // La vérification de rôle est déjà faite dans dashboard.php.
 if (!isset($pdo) || !isset($_SESSION['user_id']) || !isset($_SESSION['user']['role'])) {
-    error_log("Access denied or PDO not available in employee/my_profile.php");
+    error_log("DEBUG: my_profile.php - Accès refusé ou PDO non disponible. User ID: " . ($_SESSION['user_id'] ?? 'N/A') . ", Role: " . ($_SESSION['user']['role'] ?? 'N/A'));
     echo '<div class="alert alert-danger" role="alert">Erreur d\'accès ou de configuration.</div>';
     return;
 }
@@ -13,15 +12,21 @@ if (!isset($pdo) || !isset($_SESSION['user_id']) || !isset($_SESSION['user']['ro
 $currentUser = $_SESSION['user']; // Les infos de l'utilisateur sont déjà chargées en session dans dashboard.php
 $employee_id = $currentUser['id']; // L'ID de l'employé connecté
 
-$success_message = '';
-$error_message = '';
-
 // Traitement du formulaire de mise à jour du profil (si soumis)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
+    error_log("DEBUG: my_profile.php - Formulaire de mise à jour du profil soumis (POST).");
+    error_log("DEBUG: my_profile.php - Contenu de \$_POST: " . print_r($_POST, true));
+
     // Vérification du jeton CSRF (TRÈS IMPORTANT POUR LA SÉCURITÉ)
+    // Vérifier si le token est présent ET si la fonction verifyCsrfToken existe ET si le token est valide
     if (!isset($_POST['csrf_token']) || !function_exists('verifyCsrfToken') || !verifyCsrfToken($_POST['csrf_token'])) {
-        $error_message = __('csrf_token_invalid');
+        error_log("DEBUG: my_profile.php - Erreur CSRF: Token manquant ou invalide. Submitted: " . ($_POST['csrf_token'] ?? 'N/A'));
+        setFlashMessage('danger', __('csrf_token_invalid'));
+        redirect(BASE_URL . 'employee/dashboard.php?page=my_profile');
+        exit(); // Arrêter l'exécution après redirection
     } else {
+        error_log("DEBUG: my_profile.php - CSRF Token VÉRIFIÉ avec succès.");
+
         // Nettoyage des données soumises
         $first_name = function_exists('sanitize') ? sanitize($_POST['first_name']) : trim($_POST['first_name']);
         $last_name = function_exists('sanitize') ? sanitize($_POST['last_name']) : trim($_POST['last_name']);
@@ -31,9 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
 
         // Validation simple (ajoutez des validations plus robustes si nécessaire)
         if (empty($first_name) || empty($last_name) || empty($email)) {
-            $error_message = __('all_fields_required');
+            setFlashMessage('danger', __('all_fields_required'));
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $error_message = __('invalid_email_format');
+            setFlashMessage('danger', __('invalid_email_format'));
         } else {
             try {
                 // Mettre à jour les informations de l'employé dans la base de données
@@ -57,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 ]);
 
                 if ($stmt->rowCount() > 0) {
-                    $success_message = __('profile_updated_success');
+                    setFlashMessage('success', __('profile_updated_success'));
                     // Mettre à jour les informations en session pour qu'elles soient à jour immédiatement
                     $_SESSION['user']['first_name'] = $first_name;
                     $_SESSION['user']['last_name'] = $last_name;
@@ -65,20 +70,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                     $_SESSION['user']['phone'] = $phone;
                     $_SESSION['user']['address'] = $address;
                     $currentUser = $_SESSION['user']; // Mettre à jour la variable locale
+                    error_log("DEBUG: my_profile.php - Profil mis à jour avec succès. Session updated.");
                 } else {
-                    $error_message = __('no_changes_made_or_error');
+                    setFlashMessage('info', __('no_changes_made_or_error'));
+                    error_log("DEBUG: my_profile.php - Aucune modification détectée ou erreur silencieuse.");
                 }
 
             } catch (PDOException $e) {
-                $error_message = __('profile_update_error') . " : " . $e->getMessage();
-                error_log("PDO Error updating employee profile: " . $e->getMessage());
+                setFlashMessage('danger', __('profile_update_error') . " : " . $e->getMessage());
+                error_log("ERROR: PDO Error updating employee profile: " . $e->getMessage());
             }
         }
+        // Rediriger après le traitement du POST pour éviter la resoumission du formulaire
+        redirect(BASE_URL . 'employee/dashboard.php?page=my_profile');
+        exit(); // Arrêter l'exécution après redirection
     }
 }
 
-// Générer un nouveau jeton CSRF pour le formulaire
+// Générer un nouveau jeton CSRF pour le formulaire (pour les requêtes GET)
+// Ce token sera affiché dans le champ caché du formulaire
 $csrf_token = function_exists('generateCsrfToken') ? generateCsrfToken() : '';
+error_log("DEBUG: my_profile.php - CSRF Token généré pour le formulaire (GET): " . $csrf_token);
 
 ?>
 
@@ -86,19 +98,15 @@ $csrf_token = function_exists('generateCsrfToken') ? generateCsrfToken() : '';
     <h1 class="h2"><?= __('my_profile_title') ?></h1>
 </div>
 
-<?php if ($success_message): ?>
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
-        <?= htmlspecialchars($success_message) ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    </div>
-<?php endif; ?>
-
-<?php if ($error_message): ?>
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <?= htmlspecialchars($error_message) ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    </div>
-<?php endif; ?>
+<?php
+// Les messages flash seront affichés par dashboard.php, donc pas besoin ici
+// if ($success_message):
+//     echo '<div class="alert alert-success alert-dismissible fade show" role="alert">' . htmlspecialchars($success_message) . '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>';
+// endif;
+// if ($error_message):
+//     echo '<div class="alert alert-danger alert-dismissible fade show" role="alert">' . htmlspecialchars($error_message) . '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>';
+// endif;
+?>
 
 <div class="card shadow-sm">
     <div class="card-header bg-primary text-white">

@@ -94,8 +94,7 @@
                                 <?php foreach ($recent_orders as $order): ?>
                                 <tr>
                                     <td>#<?= $order['id'] ?></td>
-                                    <td><?= date('d/m/Y H:i', strtotime($order['date_commande'])) ?></td>
-                                    <td><?= htmlspecialchars($order['first_name'] . ' ' . $order['last_name']) ?></td>
+                                    <td><?= date('d/m/Y H:i', strtotime($order['order_date'])) ?></td> <td><?= htmlspecialchars($order['first_name'] . ' ' . $order['last_name']) ?></td>
                                     <td><?= number_format($order['total_amount'], 2) ?> €</td>
                                     <td><span class="badge bg-<?= ($order['status'] == 'delivered' ? 'success' : ($order['status'] == 'processing' ? 'info' : 'warning')) ?>"><?= htmlspecialchars(ucfirst($order['status'])) ?></span></td>
                                     <td>
