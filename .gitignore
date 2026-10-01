@@ -1,0 +1,40 @@
+# Fichiers sensibles
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Uploads utilisateurs
+uploads/
+!uploads/.gitkeep
+
+# Dépendances
+vendor/
+node_modules/
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Sauvegardes
+*.bak
+*.backup
+*.old
+*.orig
+*~
+
+# Temporaires
+*.tmp
+*.temp
+*.swp
+*.swo

@@ -1,0 +1,25 @@
+# Sécurité racine
+Options -Indexes
+
+# Bloquer les fichiers sensibles
+<FilesMatch "^(\.env|\.env\..*|composer\.(json|lock)|package\.json|\.git.*|.*\.(sql|log|bak|backup|old|orig|swp|swo|tmp))$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Bloquer l'accès direct aux fichiers PHP dans includes/
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^includes/.*\.php$ - [F,L]
+    RewriteRule ^config\.php$ - [F,L]
+</IfModule>
+
+# En-têtes de sécurité
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+AddDefaultCharset UTF-8

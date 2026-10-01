@@ -1,0 +1,170 @@
+<?php
+// employee/change_password.php
+// Ce fichier est inclus par employee/dashboard.php
+
+// S'assurer que $pdo est disponible et que l'utilisateur est connecté.
+// La vérification de rôle est déjà faite dans dashboard.php.
+if (!isset($pdo) || !isset($_SESSION['user_id'])) {
+    error_log("Access denied or PDO not available in employee/change_password.php");
+    // Redirection de secours si l'accès n'est pas correct
+    if (function_exists('redirect') && defined('BASE_URL')) {
+        $_SESSION['error_message'] = 'Access denied.';
+        redirect(BASE_URL . 'login.php');
+    } else {
+        header("Location: /login.php");
+    }
+    exit();
+}
+
+$currentUser = $_SESSION['user']; // Informations de l'utilisateur connecté
+$user_id = $currentUser['id'];
+
+$success_message = '';
+$error_message = '';
+$is_first_login = (bool)($currentUser['is_first_login'] ?? false);
+
+// Traitement du formulaire de changement de mot de passe (si soumis)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
+    // 1. Vérification du jeton CSRF
+    if (!isset($_POST['csrf_token']) || !function_exists('verifyCsrfToken') || !verifyCsrfToken($_POST['csrf_token'])) {
+        $error_message = 'Invalid CSRF token.';
+    } else {
+        // 2. Nettoyage et récupération des données du formulaire
+        $current_password = $_POST['current_password'] ?? '';
+        $new_password = $_POST['new_password'] ?? '';
+        $confirm_new_password = $_POST['confirm_new_password'] ?? '';
+
+        // 3. Validation des entrées
+        if (empty($current_password) || empty($new_password) || empty($confirm_new_password)) {
+            $error_message = 'All password fields are required.';
+        } elseif ($new_password !== $confirm_new_password) {
+            $error_message = 'New password and confirmation do not match.';
+        } elseif (strlen($new_password) < 8) { // Exemple: Le mot de passe doit avoir au moins 8 caractères
+            $error_message = 'Password must be at least 8 characters long.';
+        }
+        // Vous pouvez ajouter d'autres validations de complexité ici (majuscules, chiffres, caractères spéciaux)
+        // elseif (!preg_match('/[A-Z]/', $new_password) || !preg_match('/[0-9]/', $new_password) || !preg_match('/[!@#$%^&*()\-_=+{};:,<.>]/', $new_password)) {
+        //     $error_message = 'Password must contain at least one uppercase letter, one number, and one special character.';
+        // }
+        else {
+            try {
+                // 4. Récupérer le mot de passe haché actuel de l'utilisateur depuis la base de données
+                $stmt = $pdo->prepare("SELECT password FROM users WHERE id = :id");
+                $stmt->execute([':id' => $user_id]);
+                $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                if ($user && function_exists('password_verify')) { // Assurez-vous que password_verify existe
+                    // 5. Vérifier si l'ancien mot de passe fourni correspond au mot de passe haché stocké
+                    if (password_verify($current_password, $user['password'])) {
+                        // 6. Hacher le nouveau mot de passe
+                        if (function_exists('password_hash')) { // Assurez-vous que password_hash existe
+                            $hashed_new_password = password_hash($new_password, PASSWORD_DEFAULT);
+
+                            // 7. Mettre à jour le mot de passe dans la base de données
+                            $stmt = $pdo->prepare("
+                                UPDATE users
+                                SET password = :new_password_hash,
+                                    is_first_login = 0  -- Réinitialiser le flag de première connexion
+                                WHERE id = :id
+                            ");
+                            $stmt->execute([
+                                ':new_password_hash' => $hashed_new_password,
+                                ':id' => $user_id
+                            ]);
+
+                            // 8. Succès de la mise à jour
+                            $success_message = 'Password changed successfully.';
+                            $_SESSION['user']['is_first_login'] = 0; // Mettre à jour la session
+                            $is_first_login = false; // Mettre à jour la variable locale
+
+                            // Rediriger vers le tableau de bord standard si c'était la première connexion
+                            if (isset($_GET['page']) && $_GET['page'] === 'change_password_first_login' && function_exists('redirect') && defined('BASE_URL')) {
+                                redirect(BASE_URL . 'employee/dashboard.php?page=overview');
+                                exit();
+                            }
+
+                        } else {
+                            $error_message = "Error: password_hash() function is not available.";
+                        }
+                    } else {
+                        $error_message = 'Incorrect current password.';
+                    }
+                } else {
+                    $error_message = "Error: User information not found or password_verify() function missing.";
+                }
+
+            } catch (PDOException $e) {
+                $error_message = 'Error changing password: ' . $e->getMessage();
+                error_log("PDO Error updating password: " . $e->getMessage());
+            }
+        }
+    }
+}
+
+// Générer un nouveau jeton CSRF pour le formulaire
+$csrf_token = function_exists('generateCsrfToken') ? generateCsrfToken() : '';
+
+?>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <?php
+        // Affiche un titre différent si c'est la première connexion
+        if ($is_first_login) {
+            echo 'Change Password (First Login)';
+        } else {
+            echo 'Change Password';
+        }
+        ?>
+    </h1>
+</div>
+
+<?php if ($success_message): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <?= htmlspecialchars($success_message) ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+<?php endif; ?>
+
+<?php if ($error_message): ?>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <?= htmlspecialchars($error_message) ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+<?php endif; ?>
+
+<?php if ($is_first_login): ?>
+    <div class="alert alert-warning" role="alert">
+        <strong>Important:</strong> You are logging in for the first time. Please change your password.
+    </div>
+<?php endif; ?>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-primary text-white">
+        Password Change Form
+    </div>
+    <div class="card-body">
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
+            <input type="hidden" name="change_password" value="1"> <div class="mb-3">
+                <label for="current_password" class="form-label">Current Password :</label>
+                <input type="password" class="form-control" id="current_password" name="current_password" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="new_password" class="form-label">New Password :</label>
+                <input type="password" class="form-control" id="new_password" name="new_password" required>
+                <div class="form-text">Password must be at least 8 characters long. Consider including uppercase, lowercase, numbers, and special characters for stronger security.</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="confirm_new_password" class="form-label">Confirm New Password :</label>
+                <input type="password" class="form-control" id="confirm_new_password" name="confirm_new_password" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-key"></i> Change Password
+            </button>
+        </form>
+    </div>
+</div>
