@@ -1,228 +1,295 @@
 <?php
-session_start();
-// Pour le débogage: Affiche le contenu de la session
-echo '<pre>';
-var_dump($_SESSION);
-echo '</pre>';
-// N'oubliez pas de le supprimer après le débogage !
+// process_checkout.php — Traitement sécurisé du passage de commande
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+require_once __DIR__ . '/config.php';
 
-require_once 'config.php';
-require_once 'includes/functions.php'; // Assurez-vous que verifyCsrfToken, isLoggedIn, redirect, et sanitize sont dedans
+// ============================================================
+// 1. VÉRIFICATIONS PRÉALABLES
+// ============================================================
 
 if (!isLoggedIn()) {
-    $_SESSION['error_message'] = "Vous devez être connecté pour finaliser votre commande.";
-    redirect('login.php');
+    setFlashMessage('danger', "Vous devez être connecté pour finaliser votre commande.");
+    redirect(BASE_URL . 'login.php');
     exit();
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    $_SESSION['error_message'] = "Méthode de requête non autorisée."; // Message plus spécifique
-    redirect('checkout.php'); // Rediriger si accès direct ou méthode incorrecte
+    setFlashMessage('danger', "Méthode de requête non autorisée.");
+    redirect(BASE_URL . 'checkout.php');
     exit();
 }
 
-$csrf_token_posted = $_POST['csrf_token'] ?? '';
-if (!verifyCsrfToken($csrf_token_posted)) {
-    $_SESSION['error_message'] = 'Jeton CSRF invalide. Veuillez réessayer.';
-    redirect('checkout.php');
+if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+    setFlashMessage('danger', 'Jeton CSRF invalide. Veuillez réessayer.');
+    redirect(BASE_URL . 'checkout.php');
     exit();
 }
 
-// CORRECTION IMPORTANTE ICI : Utiliser $_SESSION['user']['id'] pour l'ID de l'utilisateur authentifié
-$user_id = $_SESSION['user']['id'] ?? null; 
+$user_id = (int)($_SESSION['user']['id'] ?? 0);
 
-// Vérification supplémentaire au cas où l'ID utilisateur ne serait pas défini après isLoggedIn
-if ($user_id === null) {
-    error_log("User ID (SESSION['user']['id']) not found for logged in user on process_checkout.php.");
-    $_SESSION['error_message'] = "Votre session utilisateur est invalide. Veuillez vous reconnecter.";
-    redirect('login.php');
+if ($user_id <= 0) {
+    error_log("process_checkout.php: user_id invalide dans la session.");
+    setFlashMessage('danger', "Votre session utilisateur est invalide. Veuillez vous reconnecter.");
+    redirect(BASE_URL . 'login.php');
     exit();
 }
 
-// ANCIENNE LIGNE : $customer_id = filter_var($_POST['customer_id'] ?? null, FILTER_VALIDATE_INT);
-// SUPPRIMÉ : Le customer_id sera récupéré de manière sécurisée depuis la base de données
+// ============================================================
+// 2. RÉCUPÉRATION ET VALIDATION DES DONNÉES
+// ============================================================
 
-$total_amount = filter_var($_POST['total_amount'] ?? null, FILTER_VALIDATE_FLOAT);
-$payment_method = sanitize($_POST['payment_method'] ?? '');
-$delivery_address = sanitize($_POST['delivery_address'] ?? ''); // Récupérer et nettoyer l'adresse de livraison
+$total_amount        = filter_var($_POST['total_amount'] ?? 0, FILTER_VALIDATE_FLOAT);
+$payment_method      = sanitize($_POST['payment_method'] ?? '');
+$delivery_first_name = sanitize($_POST['delivery_first_name'] ?? '');
+$delivery_last_name  = sanitize($_POST['delivery_last_name'] ?? '');
+$delivery_email      = filter_var($_POST['delivery_email'] ?? '', FILTER_VALIDATE_EMAIL) ?: '';
+$delivery_phone      = sanitize($_POST['delivery_phone'] ?? '');
+$delivery_address    = sanitize($_POST['delivery_address'] ?? '');
+$delivery_city       = sanitize($_POST['delivery_city'] ?? '');
+$delivery_zip_code   = sanitize($_POST['delivery_zip_code'] ?? '');
+$delivery_country    = sanitize($_POST['delivery_country'] ?? '');
 
-// Validation de base des données POST
-// $customer_id n'est plus vérifié ici car il sera récupéré de manière sécurisée
-if ($total_amount === null || $total_amount <= 0 || empty($payment_method) || empty($delivery_address)) {
-    $_SESSION['error_message'] = "Données de commande invalides ou incomplètes. Veuillez vérifier votre panier et les informations de livraison/paiement.";
-    redirect('checkout.php');
-    exit();
+$errors = [];
+
+if ($total_amount === false || $total_amount <= 0) {
+    $errors[] = "Total de commande invalide.";
+}
+if (empty($payment_method)) {
+    $errors[] = "Méthode de paiement requise.";
+}
+if (empty($delivery_address)) {
+    $errors[] = "Adresse de livraison requise.";
 }
 
-// Liste des méthodes de paiement autorisées (à adapter)
 $allowed_payment_methods = ['cash_on_delivery', 'card', 'paypal', 'bank_transfer'];
-if (!in_array($payment_method, $allowed_payment_methods)) {
-    $_SESSION['error_message'] = "Méthode de paiement sélectionnée invalide.";
-    redirect('checkout.php');
+if (!in_array($payment_method, $allowed_payment_methods, true)) {
+    $errors[] = "Méthode de paiement invalide.";
+}
+
+if (!empty($errors)) {
+    setFlashMessage('danger', implode('<br>', $errors));
+    redirect(BASE_URL . 'checkout.php');
     exit();
 }
+
+// ============================================================
+// 3. TRAITEMENT DE LA COMMANDE
+// ============================================================
 
 try {
-    // Vérifier que la connexion PDO est bien établie
     if (!isset($pdo) || !$pdo instanceof PDO) {
-        throw new Exception('Erreur de configuration : la connexion à la base de données (PDO) n\'est pas disponible.');
+        throw new RuntimeException('Connexion PDO indisponible.');
     }
 
     $pdo->beginTransaction();
 
-    // Re-vérifier l'identité du client et son panier une dernière fois pour des raisons de sécurité et d'intégrité
-    $stmt_customer = $pdo->prepare("SELECT id FROM customers WHERE user_id = :user_id");
-    // CORRECTION : Utiliser $stmt_customer et le bon paramètre :user_id avec $user_id
+    // ---- Récupérer le customer_id ----
+    $stmt_customer = $pdo->prepare("SELECT id FROM customers WHERE user_id = :user_id LIMIT 1");
     $stmt_customer->bindParam(':user_id', $user_id, PDO::PARAM_INT);
     $stmt_customer->execute();
-    $db_customer_data = $stmt_customer->fetch(PDO::FETCH_ASSOC);
+    $customer_data = $stmt_customer->fetch(PDO::FETCH_ASSOC);
 
-    // CORRECTION : Simplification de la vérification, on s'assure juste que les données client existent
-    if (!$db_customer_data) {
-        $_SESSION['error_message'] = "Erreur de sécurité: Données client introuvables pour votre session.";
+    if (!$customer_data) {
         $pdo->rollBack();
-        redirect('checkout.php');
+        setFlashMessage('danger', "Profil client introuvable. Contactez le support.");
+        redirect(BASE_URL . 'checkout.php');
         exit();
     }
+    $customer_id_for_order = (int)$customer_data['id'];
 
-    // Définir le customer_id à utiliser pour la commande, basé sur la recherche sécurisée
-    $customer_id_for_order = (int)$db_customer_data['id'];
-
-
-    $cart_items_for_order = [];
-    $recalculated_total = 0;
-
-    // Récupérer les articles du panier et vérifier le stock une dernière fois AVANT l'insertion de la commande
-    // Utiliser `cart_id` ou `user_id` pour joindre, `user_id` est plus direct ici.
+    // ---- Récupérer les articles du panier (user_id OU session_id) ----
+    $session_id = session_id();
     $stmt_cart = $pdo->prepare("
         SELECT
             ci.quantity,
-            ci.price_at_addition AS item_price,
             p.id AS product_id,
+            p.name AS product_name,
+            p.price AS product_price,
+            p.promo_price AS product_promo_price,
             p.stock_quantity AS product_stock_quantity,
             pv.id AS variant_id,
-            pv.stock_quantity AS variant_stock_quantity,
-            p.name AS product_name,
-            pv.name AS variant_name
-        FROM
-            cart_items ci
-        INNER JOIN
-            products p ON ci.product_id = p.id
-        LEFT JOIN
-            product_variants pv ON ci.variant_id = pv.id
-        WHERE
-            ci.user_id = :user_id FOR UPDATE
-    "); // FOR UPDATE pour verrouiller les lignes et éviter les problèmes de concurrence
+            pv.name AS variant_name,
+            pv.price_adjustment AS variant_price_adjustment,
+            pv.promo_price AS variant_promo_price,
+            pv.stock_quantity AS variant_stock_quantity
+        FROM cart_items ci
+        INNER JOIN products p ON ci.product_id = p.id
+        LEFT JOIN product_variants pv ON ci.variant_id = pv.id
+        WHERE ci.user_id = :user_id 
+           OR ci.session_id = :session_id
+        FOR UPDATE
+    ");
     $stmt_cart->bindParam(':user_id', $user_id, PDO::PARAM_INT);
+    $stmt_cart->bindParam(':session_id', $session_id, PDO::PARAM_STR);
     $stmt_cart->execute();
-    $cart_items_for_order = $stmt_cart->fetchAll(PDO::FETCH_ASSOC);
+    $cart_items = $stmt_cart->fetchAll(PDO::FETCH_ASSOC);
 
-    if (empty($cart_items_for_order)) {
-        $_SESSION['error_message'] = "Votre panier est vide. Impossible de passer une commande.";
+    if (empty($cart_items)) {
         $pdo->rollBack();
-        redirect('cart.php');
+        setFlashMessage('warning', "Votre panier est vide.");
+        redirect(BASE_URL . 'cart.php');
         exit();
     }
 
-    // Vérification finale du stock et calcul du total
-    foreach ($cart_items_for_order as $item) {
-        $current_stock = ($item['variant_id'] !== null) ? (int)$item['variant_stock_quantity'] : (int)$item['product_stock_quantity'];
+    // ---- Vérification stock + recalcul du total avec les prix ACTUELS ----
+    $recalculated_total = 0;
+    $order_items_prepared = [];
+
+    foreach ($cart_items as $item) {
+        $current_stock = ($item['variant_id'] !== null) 
+            ? (int)$item['variant_stock_quantity'] 
+            : (int)$item['product_stock_quantity'];
+
         if ((int)$item['quantity'] > $current_stock) {
             $pdo->rollBack();
-            $_SESSION['error_message'] = "Stock insuffisant pour l'article " . htmlspecialchars($item['product_name']);
+            $name = htmlspecialchars($item['product_name']);
             if (!empty($item['variant_name'])) {
-                $_SESSION['error_message'] .= " (" . htmlspecialchars($item['variant_name']) . ")";
+                $name .= " (" . htmlspecialchars($item['variant_name']) . ")";
             }
-            $_SESSION['error_message'] .= " (Quantité demandée: " . (int)$item['quantity'] . ", Disponible: " . $current_stock . "). Veuillez ajuster votre panier.";
-            redirect('cart.php'); // Rediriger vers le panier si problème de stock
+            setFlashMessage('danger', "Stock insuffisant pour {$name}. Disponible : {$current_stock}.");
+            redirect(BASE_URL . 'cart.php');
             exit();
         }
-        $recalculated_total += (float)$item['item_price'] * (int)$item['quantity'];
+
+        // Prix actuel (promo prioritaire)
+        $base_price = (float)($item['product_promo_price'] ?? $item['product_price']);
+
+        if ($item['variant_id'] !== null) {
+            $base_price += (float)($item['variant_price_adjustment'] ?? 0);
+            if (!empty($item['variant_promo_price'])) {
+                $base_price = (float)$item['variant_promo_price'];
+            }
+        }
+
+        $recalculated_total += $base_price * (int)$item['quantity'];
+
+        $order_items_prepared[] = [
+            'product_id' => (int)$item['product_id'],
+            'variant_id' => $item['variant_id'] !== null ? (int)$item['variant_id'] : null,
+            'quantity'   => (int)$item['quantity'],
+            'unit_price' => $base_price,
+        ];
     }
 
-    // Vérifier si le total recalculé correspond au total envoyé par le client (pour éviter la manipulation)
-    // Une petite tolérance (epsilon) est utilisée pour comparer les floats
-    if (abs($recalculated_total - $total_amount) > 0.01) { // 0.01 est une tolérance courante pour les devises
-        $_SESSION['error_message'] = "Le total de votre commande a changé en raison d'une mise à jour de prix ou d'une erreur. Veuillez vérifier votre panier.";
+    // Vérifier que le total client correspond (tolérance 0.01)
+    if (abs($recalculated_total - $total_amount) > 0.01) {
         $pdo->rollBack();
-        redirect('cart.php');
+        setFlashMessage('danger', "Le total de votre commande a changé. Veuillez vérifier votre panier.");
+        redirect(BASE_URL . 'cart.php');
         exit();
     }
 
-    // Définir l'employee_id (null pour une commande client typique) et le statut de paiement initial
-    $employee_id = null;
-    $payment_status = 'pending'; // Par défaut, en attente de paiement
+    // ---- Insérer la commande ----
+    // ⚠️ IMPORTANT : user_id doit être fourni (NOT NULL dans le schéma)
+    $stmt_order = $pdo->prepare("
+        INSERT INTO orders 
+        (customer_id, user_id, order_date, total_amount, status, payment_method, payment_status,
+         delivery_first_name, delivery_last_name, delivery_email, delivery_phone,
+         delivery_address, delivery_city, delivery_zip_code, delivery_country)
+        VALUES 
+        (:customer_id, :user_id, NOW(), :total_amount, 'pending', :payment_method, 'pending',
+         :delivery_first_name, :delivery_last_name, :delivery_email, :delivery_phone,
+         :delivery_address, :delivery_city, :delivery_zip_code, :delivery_country)
+    ");
+    $stmt_order->execute([
+        ':customer_id'         => $customer_id_for_order,
+        ':user_id'             => $user_id,
+        ':total_amount'        => $recalculated_total,
+        ':payment_method'      => $payment_method,
+        ':delivery_first_name' => $delivery_first_name,
+        ':delivery_last_name'  => $delivery_last_name,
+        ':delivery_email'      => $delivery_email,
+        ':delivery_phone'      => $delivery_phone,
+        ':delivery_address'    => $delivery_address,
+        ':delivery_city'       => $delivery_city,
+        ':delivery_zip_code'   => $delivery_zip_code,
+        ':delivery_country'    => $delivery_country,
+    ]);
+    $order_id = (int)$pdo->lastInsertId();
 
-    // 1. Créer une nouvelle commande dans la table 'orders'
-    $stmt = $pdo->prepare("INSERT INTO orders (customer_id, employee_id, order_date, total_amount, status, payment_method, payment_status, delivery_address) VALUES (:customer_id, :employee_id, NOW(), :total_amount, 'pending', :payment_method, :payment_status, :delivery_address)");
-    // CORRECTION : Utiliser le customer_id sécurisé
-    $stmt->bindParam(':customer_id', $customer_id_for_order, PDO::PARAM_INT);
-    $stmt->bindValue(':employee_id', $employee_id, PDO::PARAM_INT);
-    $stmt->bindParam(':total_amount', $recalculated_total, PDO::PARAM_STR); // Utiliser le total recalculé
-    $stmt->bindParam(':payment_method', $payment_method, PDO::PARAM_STR);
-    $stmt->bindParam(':payment_status', $payment_status, PDO::PARAM_STR);
-    $stmt->bindParam(':delivery_address', $delivery_address, PDO::PARAM_STR);
-    $stmt->execute();
-    $order_id = $pdo->lastInsertId();
+    // ---- Insérer les détails + mettre à jour les stocks ----
+    // ⚠️ IMPORTANT : price_at_purchase est NOT NULL, on le remplit
+    $stmt_detail = $pdo->prepare("
+        INSERT INTO order_details 
+        (order_id, product_id, variant_id, quantity, unit_price, price_at_purchase) 
+        VALUES 
+        (:order_id, :product_id, :variant_id, :quantity, :unit_price, :price_at_purchase)
+    ");
+    $stmt_variant_stock = $pdo->prepare("
+        UPDATE product_variants 
+        SET stock_quantity = stock_quantity - :quantity 
+        WHERE id = :variant_id
+    ");
+    $stmt_product_stock = $pdo->prepare("
+        UPDATE products 
+        SET stock_quantity = stock_quantity - :quantity 
+        WHERE id = :product_id
+    ");
 
-    // 2. Ajouter les articles du panier dans les détails de la commande et mettre à jour les stocks
-    foreach ($cart_items_for_order as $item) {
-        $product_id_order = (int)$item['product_id'];
-        $variant_id_order = !empty($item['variant_id']) ? (int)$item['variant_id'] : null;
-        $quantity_order = (int)$item['quantity'];
-        $unit_price_order = (float)$item['item_price'];
+    foreach ($order_items_prepared as $item) {
+        $stmt_detail->execute([
+            ':order_id'          => $order_id,
+            ':product_id'        => $item['product_id'],
+            ':variant_id'        => $item['variant_id'],
+            ':quantity'          => $item['quantity'],
+            ':unit_price'        => $item['unit_price'],
+            ':price_at_purchase' => $item['unit_price'],
+        ]);
 
-        $stmt = $pdo->prepare("INSERT INTO order_details (order_id, product_id, variant_id, quantity, unit_price) VALUES (:order_id, :product_id, :variant_id, :quantity, :unit_price)");
-        $stmt->bindParam(':order_id', $order_id, PDO::PARAM_INT);
-        $stmt->bindParam(':product_id', $product_id_order, PDO::PARAM_INT);
-        $stmt->bindValue(':variant_id', $variant_id_order, PDO::PARAM_INT); // Utilisez bindValue pour les valeurs null
-        $stmt->bindParam(':quantity', $quantity_order, PDO::PARAM_INT);
-        $stmt->bindParam(':unit_price', $unit_price_order, PDO::PARAM_STR);
-        $stmt->execute();
-
-        // Mettre à jour le stock
-        if ($variant_id_order !== null) {
-            $stmt = $pdo->prepare("UPDATE product_variants SET stock_quantity = stock_quantity - :quantity WHERE id = :variant_id");
-            $stmt->bindParam(':quantity', $quantity_order, PDO::PARAM_INT);
-            $stmt->bindParam(':variant_id', $variant_id_order, PDO::PARAM_INT);
+        if ($item['variant_id'] !== null) {
+            $stmt_variant_stock->execute([
+                ':quantity'   => $item['quantity'],
+                ':variant_id' => $item['variant_id'],
+            ]);
         } else {
-            $stmt = $pdo->prepare("UPDATE products SET stock_quantity = stock_quantity - :quantity WHERE id = :product_id");
-            $stmt->bindParam(':quantity', $quantity_order, PDO::PARAM_INT);
-            $stmt->bindParam(':product_id', $product_id_order, PDO::PARAM_INT);
+            $stmt_product_stock->execute([
+                ':quantity'   => $item['quantity'],
+                ':product_id' => $item['product_id'],
+            ]);
         }
-        $stmt->execute();
     }
 
-    // 3. Vider le panier de l'utilisateur après la commande réussie
-    $stmt = $pdo->prepare("DELETE FROM cart_items WHERE user_id = :user_id");
-    $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
-    $stmt->execute();
+    // ---- Historique de commande ----
+    $stmt_history = $pdo->prepare("
+        INSERT INTO order_history (order_id, status, comment, changed_by, created_at)
+        VALUES (:order_id, 'pending', 'Commande créée par le client', :user_id, NOW())
+    ");
+    $stmt_history->execute([
+        ':order_id' => $order_id,
+        ':user_id'  => $user_id,
+    ]);
+
+    // ---- Vider le panier (user_id + session_id) ----
+    $stmt_clear = $pdo->prepare("
+        DELETE FROM cart_items 
+        WHERE user_id = :user_id 
+           OR session_id = :session_id
+    ");
+    $stmt_clear->execute([
+        ':user_id'    => $user_id,
+        ':session_id' => $session_id,
+    ]);
 
     $pdo->commit();
 
-    $_SESSION['success_message'] = "Votre commande (#" . $order_id . ") a été passée avec succès !";
-    redirect('order_confirmation.php?order_id=' . $order_id);
+    setFlashMessage('success', "Votre commande #{$order_id} a été enregistrée avec succès !");
+    redirect(BASE_URL . 'order_confirmation.php?order_id=' . $order_id);
     exit();
 
 } catch (PDOException $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    error_log("Erreur PDO dans process_checkout.php: " . $e->getMessage() . "\n" . $e->getTraceAsString());
-    $_SESSION['error_message'] = 'Une erreur de base de données est survenue lors de la finalisation de votre commande. Veuillez réessayer plus tard.';
-    redirect('checkout.php');
+    error_log("PDO error in process_checkout.php: " . $e->getMessage());
+    setFlashMessage('danger', 'Erreur de base de données. Veuillez réessayer.');
+    redirect(BASE_URL . 'checkout.php');
     exit();
 } catch (Exception $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    error_log("Erreur générale dans process_checkout.php: " . $e->getMessage() . "\n" . $e->getTraceAsString());
-    $_SESSION['error_message'] = 'Une erreur inattendue est survenue lors de la finalisation de votre commande. Veuillez réessayer plus tard.';
-    redirect('checkout.php');
+    error_log("General error in process_checkout.php: " . $e->getMessage());
+    setFlashMessage('danger', 'Erreur inattendue. Veuillez réessayer.');
+    redirect(BASE_URL . 'checkout.php');
     exit();
 }
-?>
